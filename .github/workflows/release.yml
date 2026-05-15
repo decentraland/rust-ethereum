@@ -45,17 +45,49 @@ jobs:
           - { runner: macos-latest,   target: aarch64-apple-darwin,      rid: osx-arm64, artifact: librust_eth.dylib  }
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-      - name: Build cdylib
-        run: cargo build --release --target ${{ matrix.target }} -p rust_eth
-      - name: Stage artifact
+
+      # Cache native binaries by content hash of everything that influences the build.
+      # Hits when only docs / dotnet / unity / workflow comments changed since the last
+      # release; misses when crates/**, Cargo.lock, or rust-toolchain.toml changed.
+      # Bump CACHE_VERSION when release-time build flags change in this workflow.
+      - name: Compute Rust content hash
+        id: hash
         shell: bash
         run: |
+          CACHE_VERSION=v1
+          H=${{ hashFiles('crates/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml') }}
+          echo "key=native-${CACHE_VERSION}-${{ matrix.target }}-${H}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore prebuilt cdylib
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          path: out/${{ matrix.artifact }}
+          key:  ${{ steps.hash.outputs.key }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.restore.outputs.cache-hit != 'true'
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.restore.outputs.cache-hit != 'true'
+
+      - name: Build cdylib
+        if: steps.restore.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          cargo build --release --target ${{ matrix.target }} -p rust_eth
           mkdir -p out
           cp "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "out/${{ matrix.artifact }}"
+
+      - name: Save cdylib to cache
+        if: steps.restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: out/${{ matrix.artifact }}
+          key:  ${{ steps.hash.outputs.key }}
+
       - uses: actions/upload-artifact@v4
         with:
           name: native-${{ matrix.rid }}
