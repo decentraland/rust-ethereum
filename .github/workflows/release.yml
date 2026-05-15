@@ -134,17 +134,16 @@ jobs:
           cd ..
           sha256sum "rust-eth-natives-v${VERSION}.zip" > "rust-eth-natives-v${VERSION}.zip.sha256"
 
-      - name: Build macOS universal dylib for the Unity package
+      - name: Build macOS universal dylib (llvm-lipo, pre-installed on ubuntu-24.04)
         run: |
           set -euo pipefail
           mkdir -p universal
-          # Use llvm-lipo from the lld package (available on ubuntu-latest).
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq llvm
-          llvm-lipo \
-            -create \
-              artifacts/native-osx-x64/librust_eth.dylib \
-              artifacts/native-osx-arm64/librust_eth.dylib \
+          # Pick the newest llvm-lipo-NN binary on the runner (no apt install needed).
+          LIPO="$(ls /usr/bin/llvm-lipo-* 2>/dev/null | sort -V | tail -1)"
+          [ -n "$LIPO" ] || { echo "no llvm-lipo found on PATH"; exit 1; }
+          "$LIPO" -create \
+            artifacts/native-osx-x64/librust_eth.dylib \
+            artifacts/native-osx-arm64/librust_eth.dylib \
             -output universal/librust_eth.dylib
 
       - name: Mirror dotnet C# sources into unity/Runtime
