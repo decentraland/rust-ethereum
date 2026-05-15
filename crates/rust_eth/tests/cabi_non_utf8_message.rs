@@ -26,7 +26,10 @@ fn non_utf8_message_does_not_abort_process() {
     let signer = test_signer();
     let address = format!("{:?}", signer.address());
     let address_c = CString::new(address).unwrap();
-    let sig = signer.sign_message_sync(b"Test message").unwrap().as_bytes();
+    let sig = signer
+        .sign_message_sync(b"Test message")
+        .unwrap()
+        .as_bytes();
 
     // 0xFF is never a valid UTF-8 start byte; `CString` accepts it because it
     // only rejects interior NULs.

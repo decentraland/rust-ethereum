@@ -17,7 +17,10 @@ fn test_signer() -> PrivateKeySigner {
 #[test]
 fn non_utf8_address_does_not_abort_process() {
     let signer = test_signer();
-    let sig = signer.sign_message_sync(b"Test message").unwrap().as_bytes();
+    let sig = signer
+        .sign_message_sync(b"Test message")
+        .unwrap()
+        .as_bytes();
 
     let msg_c = CString::new("Test message").unwrap();
     // 0xC3 0x28 is the canonical invalid-UTF-8 pair (valid leading byte,
