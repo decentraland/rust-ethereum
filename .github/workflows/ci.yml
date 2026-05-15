@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  parity:
+    name: C# parity (dotnet ↔ unity)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify dotnet/*.cs == unity/Runtime/*.cs
+        run: |
+          diff -q dotnet/RustEthNative.cs     unity/Runtime/RustEthNative.cs
+          diff -q dotnet/RustEth.cs           unity/Runtime/RustEth.cs
+          diff -q dotnet/RustEthSignServer.cs unity/Runtime/RustEthSignServer.cs
+
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --release
+
+  dotnet:
+    name: .NET build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet build dotnet/DCL.RustEthereum.csproj -c Release

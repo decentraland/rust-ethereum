@@ -1,0 +1,6 @@
+{
+    "name": "DCL.RustEthereum",
+    "rootNamespace": "DCL.RustEthereum",
+    "allowUnsafeCode": true,
+    "autoReferenced": true
+}

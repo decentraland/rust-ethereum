@@ -1,0 +1,210 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (without leading v, e.g. 0.2.0). Creates and pushes the tag.'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  resolve-version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.set.outputs.version }}
+      tag: ${{ steps.set.outputs.tag }}
+    steps:
+      - id: set
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            v="${{ inputs.version }}"
+          else
+            v="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "tag=v$v"    >> "$GITHUB_OUTPUT"
+
+  build-native:
+    name: Build native (${{ matrix.target }})
+    needs: resolve-version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest,  target: x86_64-unknown-linux-gnu,  rid: linux-x64, artifact: librust_eth.so     }
+          - { runner: windows-latest, target: x86_64-pc-windows-msvc,    rid: win-x64,   artifact: rust_eth.dll       }
+          - { runner: macos-latest,   target: x86_64-apple-darwin,       rid: osx-x64,   artifact: librust_eth.dylib  }
+          - { runner: macos-latest,   target: aarch64-apple-darwin,      rid: osx-arm64, artifact: librust_eth.dylib  }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build cdylib
+        run: cargo build --release --target ${{ matrix.target }} -p rust_eth
+      - name: Stage artifact
+        shell: bash
+        run: |
+          mkdir -p out
+          cp "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "out/${{ matrix.artifact }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.rid }}
+          path: out/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  package-and-release:
+    name: Package and release
+    needs: [resolve-version, build-native]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.resolve-version.outputs.version }}
+      TAG:     ${{ needs.resolve-version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Assemble .NET release bundle (flat + runtimes/<rid> layouts)
+        run: |
+          set -euo pipefail
+          mkdir -p stage/native/windows stage/native/linux stage/native/macos
+          mkdir -p stage/runtimes/win-x64/native stage/runtimes/linux-x64/native
+          mkdir -p stage/runtimes/osx-x64/native stage/runtimes/osx-arm64/native
+
+          cp artifacts/native-win-x64/rust_eth.dll        stage/native/windows/
+          cp artifacts/native-linux-x64/librust_eth.so    stage/native/linux/
+          cp artifacts/native-win-x64/rust_eth.dll        stage/runtimes/win-x64/native/
+          cp artifacts/native-linux-x64/librust_eth.so    stage/runtimes/linux-x64/native/
+          cp artifacts/native-osx-x64/librust_eth.dylib   stage/runtimes/osx-x64/native/
+          cp artifacts/native-osx-arm64/librust_eth.dylib stage/runtimes/osx-arm64/native/
+
+          # macOS universal for the flat layout (lipo not available on Ubuntu, so use llvm tools or skip)
+          # Use the x86_64 build for the flat .NET layout; arm64 macOS .NET consumers use runtimes/osx-arm64.
+          cp artifacts/native-osx-x64/librust_eth.dylib   stage/native/macos/
+
+          cd stage
+          zip -r "../rust-eth-natives-v${VERSION}.zip" .
+          cd ..
+          sha256sum "rust-eth-natives-v${VERSION}.zip" > "rust-eth-natives-v${VERSION}.zip.sha256"
+
+      - name: Build macOS universal dylib for the Unity package
+        run: |
+          set -euo pipefail
+          mkdir -p universal
+          # Use llvm-lipo from the lld package (available on ubuntu-latest).
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq llvm
+          llvm-lipo \
+            -create \
+              artifacts/native-osx-x64/librust_eth.dylib \
+              artifacts/native-osx-arm64/librust_eth.dylib \
+            -output universal/librust_eth.dylib
+
+      - name: Stage native binaries for `dotnet pack`
+        run: |
+          set -euo pipefail
+          mkdir -p dotnet/runtimes/win-x64/native     \
+                   dotnet/runtimes/linux-x64/native   \
+                   dotnet/runtimes/osx-x64/native     \
+                   dotnet/runtimes/osx-arm64/native
+          cp artifacts/native-win-x64/rust_eth.dll        dotnet/runtimes/win-x64/native/
+          cp artifacts/native-linux-x64/librust_eth.so    dotnet/runtimes/linux-x64/native/
+          cp artifacts/native-osx-x64/librust_eth.dylib   dotnet/runtimes/osx-x64/native/
+          cp artifacts/native-osx-arm64/librust_eth.dylib dotnet/runtimes/osx-arm64/native/
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Pack NuGet package
+        run: |
+          set -euo pipefail
+          dotnet pack dotnet/DCL.RustEthereum.csproj \
+            -c Release \
+            -p:Version=${VERSION} \
+            -o nupkg
+          ls -la nupkg/
+          sha256sum "nupkg/Decentraland.RustEthereum.${VERSION}.nupkg" \
+            > "nupkg/Decentraland.RustEthereum.${VERSION}.nupkg.sha256"
+
+      - name: Stage Unity package native binaries
+        run: |
+          set -euo pipefail
+          # Unity expects no `lib` prefix on .so/.dylib (matches LIBRARY_NAME "rust_eth").
+          cp artifacts/native-win-x64/rust_eth.dll        unity/Runtime/Plugins/Windows/rust_eth.dll
+          cp artifacts/native-linux-x64/librust_eth.so    unity/Runtime/Plugins/Linux/rust_eth.so
+          cp universal/librust_eth.dylib                  unity/Runtime/Plugins/macOS/rust_eth.dylib
+
+      - name: Sync version into package.json
+        run: |
+          set -euo pipefail
+          python3 - <<PY
+          import json, pathlib
+          p = pathlib.Path("unity/package.json")
+          data = json.loads(p.read_text())
+          data["version"] = "${VERSION}"
+          p.write_text(json.dumps(data, indent=2) + "\n")
+          PY
+
+      - name: Create release commit and tag
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Force-add binaries past .gitignore.
+          git add -f unity/Runtime/Plugins/Windows/rust_eth.dll \
+                     unity/Runtime/Plugins/Linux/rust_eth.so \
+                     unity/Runtime/Plugins/macOS/rust_eth.dylib
+          git add unity/package.json
+          git commit -m "release: ${TAG} (native libs + version bump)"
+          git tag -f "${TAG}"
+          git push origin "${TAG}" --force
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name:     ${{ env.TAG }}
+          body: |
+            Native libraries for `rust_eth` v${{ env.VERSION }}.
+
+            **.NET consumers (NuGet)**: download `Decentraland.RustEthereum.${{ env.VERSION }}.nupkg`,
+            drop it in a local NuGet source folder, and reference normally:
+            ```xml
+            <PackageReference Include="Decentraland.RustEthereum" Version="${{ env.VERSION }}" />
+            ```
+            Native libs are auto-resolved by the .NET runtime via `runtimes/<rid>/native/`.
+
+            **.NET consumers (flat binaries)**: download `rust-eth-natives-v${{ env.VERSION }}.zip` — contains:
+            - `native/{windows,linux,macos}/` (flat layout)
+            - `runtimes/<rid>/native/` (NuGet-style layout)
+
+            **Unity consumers**: add to `Packages/manifest.json`:
+            ```json
+            "com.decentraland.rust-ethereum": "https://github.com/decentraland/rust-ethereum.git?path=unity#${{ env.TAG }}"
+            ```
+          files: |
+            nupkg/Decentraland.RustEthereum.${{ env.VERSION }}.nupkg
+            nupkg/Decentraland.RustEthereum.${{ env.VERSION }}.nupkg.sha256
+            rust-eth-natives-v${{ env.VERSION }}.zip
+            rust-eth-natives-v${{ env.VERSION }}.zip.sha256
+            artifacts/native-win-x64/rust_eth.dll
+            artifacts/native-linux-x64/librust_eth.so
+            artifacts/native-osx-x64/librust_eth.dylib
+            artifacts/native-osx-arm64/librust_eth.dylib
+            universal/librust_eth.dylib

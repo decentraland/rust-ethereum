@@ -1,0 +1,12 @@
+{
+  "name": "com.decentraland.rust-ethereum",
+  "version": "0.2.0",
+  "displayName": "Rust Ethereum",
+  "description": "Rust-backed Ethereum signing and verification.",
+  "unity": "2022.3",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Decentraland"
+  },
+  "type": "library"
+}

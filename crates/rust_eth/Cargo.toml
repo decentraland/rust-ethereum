@@ -1,0 +1,17 @@
+[package]
+name = "rust_eth"
+version = "0.2.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/decentraland/rust-ethereum"
+description = "Rust-backed Ethereum signing and verification for Decentraland."
+
+[lib]
+name = "rust_eth"
+crate-type = ["lib", "cdylib"]
+
+[dependencies]
+alloy-primitives = { version = "0.7.7", features = ["k256"] }
+alloy-signer = "0.2.1"
+alloy-signer-local = "0.2.1"
+hex = "0.4.3"

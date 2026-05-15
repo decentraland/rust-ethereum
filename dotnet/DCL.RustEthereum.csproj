@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFrameworks>netstandard2.0;net10.0</TargetFrameworks>
+        <LangVersion>10</LangVersion>
+        <ImplicitUsings>disable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <RootNamespace>DCL.RustEthereum</RootNamespace>
+        <AssemblyName>DCL.RustEthereum</AssemblyName>
+    </PropertyGroup>
+
+    <PropertyGroup Label="Package metadata">
+        <PackageId>Decentraland.RustEthereum</PackageId>
+        <Version Condition="'$(Version)' == ''">0.2.0</Version>
+        <Authors>Decentraland</Authors>
+        <Description>Rust-backed Ethereum signing and verification for Decentraland.</Description>
+        <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+        <RepositoryUrl>https://github.com/decentraland/rust-ethereum</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageProjectUrl>https://github.com/decentraland/rust-ethereum</PackageProjectUrl>
+        <PackageTags>ethereum;signing;rust;decentraland;ffi</PackageTags>
+        <IncludeBuildOutput>true</IncludeBuildOutput>
+    </PropertyGroup>
+
+    <!-- netstandard2.0 lacks Span<T>, stackalloc-Span and the Encoding.UTF8.GetString(ReadOnlySpan<byte>) overload. -->
+    <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+        <PackageReference Include="System.Memory" Version="4.5.5" />
+    </ItemGroup>
+
+    <!--
+        Native binaries are staged here by release CI before `dotnet pack`.
+        The wildcard resolves to zero files on a clean checkout, so local
+        `dotnet build` and `dotnet pack` succeed without natives present.
+    -->
+    <ItemGroup>
+        <Content Include="runtimes/**/*" Condition="Exists('runtimes')">
+            <Pack>true</Pack>
+            <PackagePath>runtimes/</PackagePath>
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
+    </ItemGroup>
+
+</Project>
