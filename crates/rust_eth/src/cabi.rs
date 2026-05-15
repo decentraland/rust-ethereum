@@ -15,8 +15,15 @@ pub unsafe extern "C" fn eth_verify_message(
     message: *const c_char,
     signature: *const u8,
 ) -> bool {
-    let address_str = CStr::from_ptr(expected_signer_address).to_str().unwrap();
-    let string_message = CStr::from_ptr(message).to_str().unwrap();
+    if expected_signer_address.is_null() || message.is_null() || signature.is_null() {
+        return false;
+    }
+    let Ok(address_str) = CStr::from_ptr(expected_signer_address).to_str() else {
+        return false;
+    };
+    let Ok(string_message) = CStr::from_ptr(message).to_str() else {
+        return false;
+    };
     let sig_bytes: &[u8; 65] = &*(signature as *const [u8; 65]);
     crate::verify::verify_message(address_str, string_message, sig_bytes).unwrap_or(false)
 }
