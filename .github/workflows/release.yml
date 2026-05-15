@@ -246,6 +246,4 @@ jobs:
             rust-eth-natives-v${{ env.VERSION }}.zip.sha256
             artifacts/native-win-x64/rust_eth.dll
             artifacts/native-linux-x64/librust_eth.so
-            artifacts/native-osx-x64/librust_eth.dylib
-            artifacts/native-osx-arm64/librust_eth.dylib
             universal/librust_eth.dylib
