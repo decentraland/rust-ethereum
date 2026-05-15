@@ -115,6 +115,13 @@ jobs:
               artifacts/native-osx-arm64/librust_eth.dylib \
             -output universal/librust_eth.dylib
 
+      - name: Mirror dotnet C# sources into unity/Runtime
+        run: |
+          set -euo pipefail
+          cp dotnet/RustEthNative.cs     unity/Runtime/RustEthNative.cs
+          cp dotnet/RustEth.cs           unity/Runtime/RustEth.cs
+          cp dotnet/RustEthSignServer.cs unity/Runtime/RustEthSignServer.cs
+
       - name: Stage native binaries for `dotnet pack`
         run: |
           set -euo pipefail
@@ -166,8 +173,11 @@ jobs:
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Force-add binaries past .gitignore.
-          git add -f unity/Runtime/Plugins/Windows/rust_eth.dll \
+          # Force-add binaries + mirrored C# past .gitignore.
+          git add -f unity/Runtime/RustEthNative.cs \
+                     unity/Runtime/RustEth.cs \
+                     unity/Runtime/RustEthSignServer.cs \
+                     unity/Runtime/Plugins/Windows/rust_eth.dll \
                      unity/Runtime/Plugins/Linux/rust_eth.so \
                      unity/Runtime/Plugins/macOS/rust_eth.dylib
           git add unity/package.json

@@ -23,8 +23,14 @@ unity/                     # UPM package source + static .meta files
 .github/workflows/         # ci.yml + release.yml
 ```
 
-`dotnet/*.cs` and `unity/Runtime/*.cs` are byte-identical and CI enforces it (`ci.yml`
-parity job). When changing one, change the other.
+`dotnet/*.cs` is the single source of truth for the managed bindings. The release CI
+mirrors them into `unity/Runtime/*.cs` automatically before tagging — the Unity copies
+are gitignored on `main` and exist only on release commits. To test the Unity package
+locally, copy them by hand:
+
+```bash
+cp dotnet/RustEth*.cs unity/Runtime/
+```
 
 ## Building locally
 
